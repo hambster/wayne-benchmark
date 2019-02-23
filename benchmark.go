@@ -21,6 +21,7 @@ const (
 	EnvNumThreadsDefault    = 2
 	ModeIsolation           = "isolation"
 	ModeShared              = "shared"
+	ModeSpinLock            = "spinlock"
 	IterationDefault        = 10000
 	NumRandomGen            = 128
 	RandomWriteRatioDefault = float64(0.05)
@@ -31,7 +32,7 @@ func usage() {
 	cliName := os.Args[0]
 	fmt.Printf(`
 	command:
-		%s [%s|%s] [number-of-iteration] [random-write-ratio] [path-to-write] [bytes-to-write]
+		%s [%s|%s|%s] [number-of-iteration] [random-write-ratio] [path-to-write] [bytes-to-write]
 
 	note:
 		the maximum value of random-write-ratio is 100, which means you will definite write data in every iteration.
@@ -52,19 +53,25 @@ func usage() {
 		# and generate 90%% random write 2KB in /tmp
 		export NUM_THREADS=16
 		taskset 0xFFF %s %s 1000000 90 /tmp 2048
+
+		# populate 16 threads to stress CPU with 1000000 iteration with interacting with each other using spinlock
+		# and generate 90%% random write 2KB in /tmp
+		export NUM_THREADS=16
+		taskset 0xFFF %s %s 1000000 90 /tmp 2048
+
 `,
 		cliName,
-		ModeIsolation,
-		ModeShared,
+		ModeIsolation, ModeShared, ModeSpinLock,
 		cliName, ModeIsolation,
 		cliName, ModeShared,
 		cliName, ModeShared,
+		cliName, ModeSpinLock,
 	)
 	os.Exit(1)
 }
 
 func checkMode(mode string) bool {
-	if ModeIsolation != mode && ModeShared != mode {
+	if ModeIsolation != mode && ModeShared != mode && ModeSpinLock != mode {
 		return false
 	}
 
@@ -95,7 +102,7 @@ func checkPath2Write(dirPath string) bool {
 	return false
 }
 
-func consumeCPU(randSrc *rand.Rand, randomWriteRatio float64, fileHandle *os.File, bytes2Write []byte) string {
+func consumeCPU(randSrc *rand.Rand, randomWriteRatio float64, fileHandle *os.File, bytes2Write []byte, lock *SpinLock) string {
 	sha512Handle := sha512.New512_256()
 	isWrite := false
 	if 100.0 == randomWriteRatio || (randomWriteRatio/100.0) >= randSrc.Float64() {
@@ -109,6 +116,11 @@ func consumeCPU(randSrc *rand.Rand, randomWriteRatio float64, fileHandle *os.Fil
 	if isWrite {
 		fileHandle.Seek(0, os.SEEK_SET)
 		fileHandle.Write(bytes2Write)
+	}
+
+	if nil != lock {
+		lock.Lock()
+		defer lock.Unlock()
 	}
 
 	return fmt.Sprintf("%x", sha512Handle.Sum(nil))
@@ -135,12 +147,20 @@ func runBenchmark(mode string, numThreads int, numIteration int, randomWriteRati
 				}
 
 				for idxIter := 0; idxIter < numIteration; idxIter++ {
-					consumeCPU(rndHandle, randomWriteRatio, fileHandle, bytes2Write)
+					consumeCPU(rndHandle, randomWriteRatio, fileHandle, bytes2Write, nil)
 				}
 			}(idx)
 		}
 	} else {
 		sharedChan := make(chan string, numThreads)
+		var lock *SpinLock
+		if ModeSpinLock == mode {
+			lock = &SpinLock{}
+			fmt.Printf("SpinLock: Enabled\n")
+		} else {
+			fmt.Printf("SpinLock: Disabled\n")
+		}
+
 		for idx := 0; idx < numThreads; idx++ {
 			wg.Add(1)
 			go func(workerIdx int) {
@@ -157,7 +177,7 @@ func runBenchmark(mode string, numThreads int, numIteration int, randomWriteRati
 						<-sharedChan
 					}
 
-					tmp := consumeCPU(rndHandle, randomWriteRatio, fileHandle, bytes2Write)
+					tmp := consumeCPU(rndHandle, randomWriteRatio, fileHandle, bytes2Write, lock)
 					sharedChan <- tmp
 				}
 			}(idx)
