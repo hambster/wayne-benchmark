@@ -6,7 +6,7 @@ System Benchmark Tool to Generate CPU Utilization and I/O.
 
 
 	command:
-		./wayne-benchmark [isolation|shared] [number-of-iteration] [random-write-ratio] [path-to-write] [bytes-to-write]
+		./wayne-benchmark [isolation|shared|spinlock] [number-of-iteration] [random-write-ratio] [path-to-write] [bytes-to-write]
 
 	note:
 		the maximum value of random-write-ratio is 100, which means you will definite write data in every iteration.
@@ -27,3 +27,8 @@ System Benchmark Tool to Generate CPU Utilization and I/O.
 		# and generate 90% random write 2KB in /tmp
 		export NUM_THREADS=16
 		taskset 0xFFF ./wayne-benchmark shared 1000000 90 /tmp 2048
+
+		# populate 16 threads to stress CPU with 1000000 iteration with interacting with each other using spinlock
+		# and generate 90% random write 2KB in /tmp
+		export NUM_THREADS=16
+		taskset 0xFFF ./wayne-benchmark spinlock 1000000 90 /tmp 2048
