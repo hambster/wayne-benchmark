@@ -185,7 +185,7 @@ func runBenchmark(mode string, numThreads int, numIteration int, randomWriteRati
 	}
 
 	wg.Wait()
-	fmt.Printf("Time eclipsed: %s\n", time.Now().Sub(startTime))
+	fmt.Printf("Time elapsed: %s\n", time.Now().Sub(startTime))
 }
 
 func main() {
